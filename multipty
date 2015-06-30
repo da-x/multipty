@@ -8,16 +8,7 @@ import threading
 import time
 import signal
 
-def main():
-    pos = 0
-    i = iter(sys.argv[1:])
-    hosts = []
-    for arg in i:
-        if arg == ':':
-            break
-        hosts.append(arg)
-
-    orig_args = list(i)
+def parallel(hosts, orig_args, shell=False):
     fds = []
 
     processes = []
@@ -29,6 +20,9 @@ def main():
         """"""
         (master, slave) = pty.openpty()
         try:
+            if shell:
+                args = ["bash", "-c", ' '.join([repr(a) for a in args])]
+            print args
             process = subprocess.Popen(args,
                                        stdin=slave,
                                        stdout=slave,
@@ -99,6 +93,46 @@ def main():
 
     for thread in threads:
         thread.join()
+
+def main():
+    pos = 0
+    i = iter(sys.argv[1:])
+
+    hosts = []
+    cmd_start = None
+    for arg in i:
+        if arg.startswith(':'):
+            cmd_start = arg
+            break
+        hosts.append(arg)
+
+    while cmd_start:
+        cmd_start = cmd_start[1:]
+        shell = False
+        if cmd_start.startswith(':'):
+            shell = True
+            cmd_start = cmd_start[1:]
+
+        limit = None
+        try:
+            limit = long(cmd_start, 10)
+        except ValueError:
+            pass
+
+        cmd_start = None
+        orig_args = []
+        for arg in i:
+            if limit is not None:
+                limit -= 1
+            orig_args.append(arg)
+            if limit is not None and limit == 0:
+                try:
+                    cmd_start = i.next()
+                    break
+                except StopIteration:
+                    break
+
+        parallel(hosts, orig_args, shell=shell)
 
 if __name__ == '__main__':
     main()
