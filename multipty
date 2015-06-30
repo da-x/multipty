@@ -1,0 +1,104 @@
+#!/usr/bin/env python
+
+import pty
+import sys
+import os
+import subprocess
+import threading
+import time
+import signal
+
+def main():
+    pos = 0
+    i = iter(sys.argv[1:])
+    hosts = []
+    for arg in i:
+        if arg == ':':
+            break
+        hosts.append(arg)
+
+    orig_args = list(i)
+    fds = []
+
+    processes = []
+    semaphore = threading.Semaphore(1)
+    counter = [0]
+    lock = threading.Lock()
+
+    def sub(host, args):
+        """"""
+        (master, slave) = pty.openpty()
+        try:
+            process = subprocess.Popen(args,
+                                       stdin=slave,
+                                       stdout=slave,
+                                       stderr=slave,
+                                       close_fds=False)
+            processes.append(process)
+
+            os.close(slave)
+            counter[0] += 1
+            slave = -1
+            if counter[0] == len(hosts):
+                semaphore.release()
+
+            buf = ''
+            while True:
+                try:
+                    data_read = os.read(master, 0x10000)
+                    buf += data_read
+                except OSError, e:
+                    break
+                if not data_read:
+                    break
+
+                splited_lines = buf.split('\n')
+                for (pos, line) in enumerate(splited_lines):
+                    if pos != len(splited_lines) - 1:
+                        lock.acquire()
+                        try:
+                            print "%s: %s" % (host, line)
+                        except IOError:
+                            pass
+                        lock.release()
+                    else:
+                        buf = line
+        finally:
+            os.close(master)
+            if slave != -1:
+                os.close(slave)
+                counter[0] += 1
+                if counter[0] == len(hosts):
+                    semaphore.release()
+
+    semaphore.acquire()
+
+    threads = []
+    for host in hosts:
+        args = []
+        for arg in orig_args:
+            arg = arg.replace('%{host}', host)
+            args.append(arg)
+
+        thread = threading.Thread(target=sub, args=(host, args, ))
+        thread.daemon = True
+        thread.start()
+        threads.append(thread)
+
+    semaphore.acquire()
+    not_waited = set(processes)
+    try:
+        for process in processes:
+            process.wait()
+            not_waited.remove(process)
+    except (KeyboardInterrupt, SystemExit):
+        pass
+
+    for process in not_waited:
+        process.send_signal(signal.SIGINT)
+
+    for thread in threads:
+        thread.join()
+
+if __name__ == '__main__':
+    main()
