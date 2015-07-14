@@ -8,6 +8,7 @@ import threading
 import termios
 import atexit
 import re
+import fnmatch
 
 def enable_echo(fd, enabled):
     (iflag, oflag, cflag, lflag, ispeed, ospeed, cc) \
@@ -23,13 +24,21 @@ def process_args(orig_args, host):
     args = []
 
     def sub(match):
-        (h, s) = match.groups(0)
-        if h == host:
-            return s
-        return ""
+        (n, h, s) = match.groups(0)
+        hs = h.split(",")
+        if n == "not-":
+            match_res = ""
+            unmatch_res = s
+        else:
+            match_res = s
+            unmatch_res = ""
+        for hostexp in hs:
+            if fnmatch.fnmatch(host, hostexp):
+                return match_res
+        return unmatch_res
 
     for arg in orig_args:
-        arg = re.sub(r"[%][{]on:([^\}]+)}[{]([^\}]+)[}]", sub, arg)
+        arg = re.sub(r"[%][{](not-)?on:([^\}]+)}[ \t]*[{]([^\}]+)[}]", sub, arg)
         actual_host = host.split('^', 1)[0]
         arg = arg.replace('%{host}', actual_host)
         arg = arg.replace("\n", " ")
@@ -104,6 +113,11 @@ def parallel(hosts, orig_args, shell=False, demo=True):
         args = process_args(orig_args, host)
         if demo:
             for arg in args:
+                while True:
+                    before_rep_arg = arg
+                    arg = arg.replace("  ", " ")
+                    if arg == before_rep_arg:
+                        break
                 if ' ' in arg or '\'' in arg or '\"' in arg:
                     print repr(arg),
                 else:
