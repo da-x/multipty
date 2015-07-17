@@ -38,11 +38,12 @@ def process_args(orig_args, host):
         return unmatch_res
 
     for arg in orig_args:
-        arg = re.sub(r"[%][{](not-)?on:([^\}]+)}[ \t]*[{]([^\}]+)[}]", sub, arg)
+        arg = re.sub(r"[%][{](not-)?on:([^\}]+)[}][ \t]*[{]([^\}]*)[}]", sub, arg)
         actual_host = host.split('^', 1)[0]
         arg = arg.replace('%{host}', actual_host)
         arg = arg.replace("\n", " ")
-        args.append(arg)
+        if arg:
+            args.append(arg)
     return args
 
 def parallel(hosts, orig_args, shell=False, demo=True):
